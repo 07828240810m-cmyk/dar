@@ -1,0 +1,1036 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny everything unless explicitly permitted below
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== Global Helpers ====================
+    function isValidId(id) {
+      return id is string &&
+             id.size() >= 1 &&
+             id.size() <= 128 &&
+             id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUpperCode(code) {
+      return code is string &&
+             code.size() >= 4 &&
+             code.size() <= 32 &&
+             code.matches('^[A-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email_verified == true &&
+             request.auth.token.email == '07828240810m@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isAdmin == true
+      );
+    }
+
+    function isSubAdminWith(perm) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/sub_admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/sub_admins/$(request.auth.uid)).data[perm] == true;
+    }
+
+    function isAnySubAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/sub_admins/$(request.auth.uid));
+    }
+
+    // ==================== Entity Validation Helpers ====================
+    function isValidAdminUser(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+             data.isAdmin is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAppReleaseConfig(data) {
+      return data.latest_version_code is int &&
+             data.latest_version_code >= 1 &&
+             data.latest_version_code <= 999999 &&
+             data.latest_version_name is string &&
+             data.latest_version_name.size() >= 1 &&
+             data.latest_version_name.size() <= 150 &&
+             data.release_notes is string &&
+             data.release_notes.size() <= 2000 &&
+             data.force_update is bool &&
+             data.apk_url is string &&
+             data.apk_url.size() <= 1000 &&
+             (data.apk_url == '' || data.apk_url.matches('^https?://.*')) &&
+             (!('release_image_url' in data) || (data.release_image_url is string && data.release_image_url.size() <= 1000 && (data.release_image_url == '' || data.release_image_url.matches('^https?://.*')))) &&
+             (!('release_image_base64' in data) || (data.release_image_base64 is string && data.release_image_base64.size() <= 185000)) &&
+             data.updated_by is string &&
+             data.updated_by.size() >= 1 &&
+             data.updated_by.size() <= 128 &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time));
+    }
+
+    function isValidRemoteControlConfig(data) {
+      return data.maintenanceEnabled is bool &&
+             data.maintenanceMessage is string && data.maintenanceMessage.size() <= 1000 &&
+             (!('maintenanceEtaText' in data) || (data.maintenanceEtaText is string && data.maintenanceEtaText.size() <= 200)) &&
+             data.disabledTools is list && data.disabledTools.size() <= 30 &&
+             data.pointsRequiredTools is map &&
+             data.seasonalTheme is string &&
+             data.seasonalTheme in ['NONE', 'RAMADAN', 'EID', 'TEACHER_DAY', 'EXAMS', 'AUTUMN', 'DARK_GOLD'] &&
+             data.defaultAccessMode is string &&
+             data.defaultAccessMode in ['OPEN', 'TRIAL'] &&
+             data.defaultTrialDays is int && data.defaultTrialDays >= 1 && data.defaultTrialDays <= 3650 &&
+             (!('subscriptionsEnabled' in data) || data.subscriptionsEnabled is bool) &&
+             (!('allowWeeklyNameChange' in data) || data.allowWeeklyNameChange is bool) &&
+             (!('inactivityReminderMessage' in data) || (data.inactivityReminderMessage is string && data.inactivityReminderMessage.size() <= 1000)) &&
+             (!('internalUpdateEnabled' in data) || data.internalUpdateEnabled is bool) &&
+             (!('internalUpdateRevision' in data) || (data.internalUpdateRevision is int && data.internalUpdateRevision >= 0)) &&
+             (!('internalUpdateTitle' in data) || (data.internalUpdateTitle is string && data.internalUpdateTitle.size() <= 200)) &&
+             (!('internalUpdateText' in data) || (data.internalUpdateText is string && data.internalUpdateText.size() <= 500)) &&
+             (!('internalUpdateDurationSec' in data) || (data.internalUpdateDurationSec is int && data.internalUpdateDurationSec >= 3 && data.internalUpdateDurationSec <= 30)) &&
+             (!('internalUpdateIncludeSchoolRoster' in data) || data.internalUpdateIncludeSchoolRoster is bool) &&
+             (!('internalUpdateCustomRosterText' in data) || (data.internalUpdateCustomRosterText is string && data.internalUpdateCustomRosterText.size() <= 120000)) &&
+             (!('experimentalLayoutEnabled' in data) || data.experimentalLayoutEnabled is bool) &&
+             (!('experimentalLayoutMode' in data) || (data.experimentalLayoutMode is string && data.experimentalLayoutMode in ['CLASSIC', 'MODERN_SPLIT', 'COMPACT_CARDS', 'FOCUS_STUDIO', 'SPECIALIST_PRO'])) &&
+             (!('passwordChangeIntervalDays' in data) || (data.passwordChangeIntervalDays is int && data.passwordChangeIntervalDays >= 1 && data.passwordChangeIntervalDays <= 90)) &&
+             (!('chatExpiryHours' in data) || (data.chatExpiryHours is int && data.chatExpiryHours in [24, 48])) &&
+             (!('customPromotionTitles' in data) || (data.customPromotionTitles is list && data.customPromotionTitles.size() <= 20)) &&
+             data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPromoBannerConfig(data) {
+      return data.enabled is bool &&
+             data.title is string && data.title.size() <= 150 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
+             (data.imageUrl == '' || data.imageUrl.matches('^https?://.*')) &&
+             data.actionUrl is string && data.actionUrl.size() <= 1000 &&
+             (data.actionUrl == '' || data.actionUrl.matches('^https?://.*')) &&
+             data.phoneNumber is string && data.phoneNumber.size() <= 40 &&
+             data.buttonLabel is string && data.buttonLabel.size() <= 60 &&
+             (!('placement' in data) || (data.placement is string && data.placement in ['HOME', 'ALL_SCREENS', 'SPECIFIC_SECTION'])) &&
+             (!('targetRoute' in data) || (data.targetRoute is string && data.targetRoute.size() <= 60)) &&
+             (!('position' in data) || (data.position is string && data.position in ['TOP', 'BOTTOM'])) &&
+             data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAdminNotification(data) {
+      return data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 150 &&
+             data.body is string &&
+             data.body.size() >= 1 &&
+             data.body.size() <= 2000 &&
+             data.priority is string &&
+             data.priority in ['NORMAL', 'IMPORTANT', 'URGENT'] &&
+             (!('targetType' in data) || (data.targetType is string && data.targetType in ['ALL', 'USER', 'GRADE', 'SUBJECT'])) &&
+             (!('targetValue' in data) || (data.targetValue is string && data.targetValue.size() <= 120)) &&
+             (!('scheduledForMillis' in data) || (data.scheduledForMillis is int && data.scheduledForMillis >= 0)) &&
+             (!('iconBase64' in data) || (data.iconBase64 is string && data.iconBase64.size() <= 95000)) &&
+             data.active is bool &&
+             data.authorUid is string &&
+             data.authorUid.size() >= 1 &&
+             data.authorUid.size() <= 128 &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 100)) &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time &&
+             (!('sentAt' in data) || (data.sentAt is timestamp && data.sentAt <= request.time));
+    }
+
+    function isValidNotificationState(data) {
+      return data.notificationId is string &&
+             data.notificationId.size() >= 1 &&
+             data.notificationId.size() <= 128 &&
+             data.read is bool &&
+             data.readAt is timestamp &&
+             data.readAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidCloudPoll(data) {
+      return data.question is string && data.question.size() >= 2 && data.question.size() <= 300 &&
+             data.options is list && data.options.size() >= 2 && data.options.size() <= 6 &&
+             data.targetType is string && data.targetType in ['ALL', 'USER', 'GRADE', 'SUBJECT'] &&
+             data.targetValue is string && data.targetValue.size() <= 120 &&
+             data.active is bool &&
+             data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPollVote(data) {
+      return data.pollId is string && data.pollId.size() >= 1 && data.pollId.size() <= 128 &&
+             data.voterUid is string && data.voterUid.size() >= 1 && data.voterUid.size() <= 128 &&
+             data.optionIndex is int && data.optionIndex >= 0 && data.optionIndex <= 5 &&
+             data.votedAt is timestamp && data.votedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserPollVoteReceipt(data) {
+      return data.pollId is string && data.pollId.size() >= 1 && data.pollId.size() <= 128 &&
+             data.optionIndex is int && data.optionIndex >= 0 && data.optionIndex <= 5 &&
+             data.votedAt is timestamp && data.votedAt <= request.time;
+    }
+
+    function isValidTeacherAccount(data) {
+      return data.accountKey is string && data.accountKey.size() >= 1 && data.accountKey.size() <= 128 &&
+             data.usernameDisplay is string && data.usernameDisplay.size() <= 60 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.passwordHash is string && data.passwordHash.size() <= 160 &&
+             data.passwordSalt is string && data.passwordSalt.size() <= 80 &&
+             data.teacherName is string && data.teacherName.size() <= 120 &&
+             data.specialtyId is string && data.specialtyId.size() <= 40 &&
+             data.gradeId is string && data.gradeId.size() <= 40 &&
+             data.referralCode is string && data.referralCode.size() <= 24 &&
+             data.referredByCode is string && data.referredByCode.size() <= 24 &&
+             data.points is int && data.points >= 0 && data.points <= 1000000 &&
+             data.referralCount is int && data.referralCount >= 0 && data.referralCount <= 100000 &&
+             data.claimedReferralIds is list && data.claimedReferralIds.size() <= 200 &&
+             data.accessMode is string && data.accessMode in ['OPEN', 'TRIAL', 'SUSPENDED'] &&
+             data.trialDays is int && data.trialDays >= 0 && data.trialDays <= 3650 &&
+             data.trialExpiresAtMillis is int && data.trialExpiresAtMillis >= 0 &&
+             data.todayDateKey is string && data.todayDateKey.size() <= 20 &&
+             data.todayUsageSeconds is int && data.todayUsageSeconds >= 0 && data.todayUsageSeconds <= 200000 &&
+             data.totalUsageSeconds is int && data.totalUsageSeconds >= 0 && data.totalUsageSeconds <= 100000000 &&
+             data.toolUsageCounts is map &&
+             data.ratingStars is int && data.ratingStars >= 0 && data.ratingStars <= 5 &&
+             data.ratingComment is string && data.ratingComment.size() <= 500 &&
+             (!('promotionTitle' in data) || (data.promotionTitle is string && data.promotionTitle.size() <= 80)) &&
+             (!('allowWeeklyNameChange' in data) || data.allowWeeklyNameChange is bool) &&
+             (!('nameChangeCount' in data) || (data.nameChangeCount is int && data.nameChangeCount >= 0 && data.nameChangeCount <= 1000)) &&
+             (!('boundDeviceId' in data) || (data.boundDeviceId is string && data.boundDeviceId.size() <= 128)) &&
+             (!('isOnlineVisible' in data) || data.isOnlineVisible is bool) &&
+             (!('lastPingAtMillis' in data) || (data.lastPingAtMillis is int && data.lastPingAtMillis >= 0)) &&
+             data.lastActiveAt is timestamp && data.lastActiveAt <= request.time &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTeacherBackup(data) {
+      return data.encryptedBlob is string && data.encryptedBlob.size() >= 1 && data.encryptedBlob.size() <= 900000 &&
+             data.checksumSha256 is string && data.checksumSha256.size() >= 16 && data.checksumSha256.size() <= 128 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.studentCount is int && data.studentCount >= 0 && data.studentCount <= 50000 &&
+             data.appVersionCode is int && data.appVersionCode >= 1 && data.appVersionCode <= 999999 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidReferralCodeDoc(data) {
+      return isValidUpperCode(data.code) &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.accountKey is string && data.accountKey.size() >= 1 && data.accountKey.size() <= 128 &&
+             data.teacherName is string && data.teacherName.size() <= 120 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidReferralClaim(data) {
+      return data.claimerUid is string && data.claimerUid.size() >= 1 && data.claimerUid.size() <= 128 &&
+             data.claimerAccountKey is string && data.claimerAccountKey.size() >= 1 && data.claimerAccountKey.size() <= 128 &&
+             isValidUpperCode(data.referrerCode) &&
+             data.referrerUid is string && data.referrerUid.size() >= 1 && data.referrerUid.size() <= 128 &&
+             data.pointsAwarded is int && data.pointsAwarded >= 1 && data.pointsAwarded <= 500 &&
+             data.claimedAt is timestamp && data.claimedAt <= request.time;
+    }
+
+    function isValidAdminGift(data) {
+      return data.amount is int && data.amount >= 1 && data.amount <= 10000 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 300 &&
+             data.targetType is string && data.targetType == 'ALL' &&
+             data.active is bool &&
+             data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDeveloperFeedback(data) {
+      return data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() <= 120 &&
+             data.accountKey is string && data.accountKey.size() <= 128 &&
+             data.category is string && data.category in ['SUGGESTION', 'COMPLAINT', 'BUG', 'OTHER'] &&
+             data.message is string && data.message.size() >= 2 && data.message.size() <= 5000 &&
+             data.wordCount is int && data.wordCount >= 1 && data.wordCount <= 2000 &&
+             data.lockedThreeDays is bool &&
+             data.lockedUntilMillis is int && data.lockedUntilMillis >= 0 &&
+             data.status is string && data.status in ['OPEN', 'REVIEWED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidParentReport(data) {
+      return isValidUpperCode(data.reportCode) &&
+             data.teacherUid is string && data.teacherUid.size() >= 1 && data.teacherUid.size() <= 128 &&
+             data.teacherName is string && data.teacherName.size() <= 120 &&
+             data.subjectName is string && data.subjectName.size() <= 80 &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 120 &&
+             data.gradeTitle is string && data.gradeTitle.size() <= 60 &&
+             data.sectionId is string && data.sectionId.size() <= 20 &&
+             data.expiresAtMillis is int && data.expiresAtMillis > 0 &&
+             data.deletedByAdmin is bool &&
+             data.visibilityJson is string && data.visibilityJson.size() >= 2 && data.visibilityJson.size() <= 2000 &&
+             data.reportDataJson is string && data.reportDataJson.size() >= 2 && data.reportDataJson.size() <= 8000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // ==================== Collection Rules ====================
+
+    // 1. Admins directory
+    match /admins/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidAdminUser(incoming()) &&
+                       isAdmin() &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'email', 'isAdmin', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'isAdmin', 'createdAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidAdminUser(incoming()) &&
+                       isAdmin() &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'isAdmin', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // 2. App configs (latest_release, remote_control, promo_banner)
+    match /app_config/{configId} {
+      allow get: if isSignedIn() && configId in ['latest_release', 'remote_control', 'promo_banner'];
+      allow list: if isBootstrappedAdmin();
+
+      allow create, update: if isSignedIn() &&
+                               ((configId == 'latest_release' &&
+                                 isAdmin() &&
+                                 isValidAppReleaseConfig(incoming()) &&
+                                 incoming().updated_by == request.auth.uid &&
+                                 incoming().keys().hasAll([
+                                   'latest_version_code', 'latest_version_name', 'release_notes',
+                                   'force_update', 'apk_url', 'updated_by', 'createdAt', 'updatedAt'
+                                 ]) &&
+                                 incoming().keys().hasOnly([
+                                   'latest_version_code', 'latest_version_name', 'release_notes',
+                                   'force_update', 'apk_url', 'release_image_url', 'release_image_base64',
+                                   'updated_by', 'createdAt', 'updatedAt'
+                                 ])) ||
+                                (configId == 'remote_control' &&
+                                 (isAdmin() || isSubAdminWith('canManageRemoteControl')) &&
+                                 isValidRemoteControlConfig(incoming()) &&
+                                 incoming().updatedBy == request.auth.uid &&
+                                 incoming().keys().hasAll([
+                                   'maintenanceEnabled', 'maintenanceMessage', 'disabledTools',
+                                   'pointsRequiredTools', 'seasonalTheme', 'defaultAccessMode',
+                                   'defaultTrialDays', 'updatedBy', 'createdAt', 'updatedAt'
+                                 ]) &&
+                                 incoming().keys().hasOnly([
+                                   'maintenanceEnabled', 'maintenanceMessage', 'maintenanceEtaText',
+                                   'disabledTools', 'pointsRequiredTools', 'seasonalTheme',
+                                   'defaultAccessMode', 'defaultTrialDays', 'subscriptionsEnabled',
+                                   'allowWeeklyNameChange', 'inactivityReminderMessage',
+                                   'internalUpdateEnabled', 'internalUpdateRevision', 'internalUpdateTitle',
+                                   'internalUpdateText', 'internalUpdateDurationSec',
+                                   'internalUpdateIncludeSchoolRoster', 'internalUpdateCustomRosterText',
+                                   'experimentalLayoutEnabled', 'experimentalLayoutMode',
+                                   'passwordChangeIntervalDays', 'chatExpiryHours', 'customPromotionTitles',
+                                   'updatedBy', 'createdAt', 'updatedAt'
+                                 ])) ||
+                                (configId == 'promo_banner' &&
+                                 (isAdmin() || isSubAdminWith('canManageRemoteControl')) &&
+                                 isValidPromoBannerConfig(incoming()) &&
+                                 incoming().updatedBy == request.auth.uid &&
+                                 incoming().keys().hasAll([
+                                   'enabled', 'title', 'description', 'imageUrl', 'actionUrl',
+                                   'phoneNumber', 'buttonLabel', 'updatedBy', 'createdAt', 'updatedAt'
+                                 ]) &&
+                                 incoming().keys().hasOnly([
+                                   'enabled', 'title', 'description', 'imageUrl', 'actionUrl',
+                                   'phoneNumber', 'buttonLabel', 'placement', 'targetRoute', 'position',
+                                   'updatedBy', 'createdAt', 'updatedAt'
+                                 ])));
+
+      allow delete: if false;
+    }
+
+    // 3. Targeted & broadcast announcements
+    match /admin_notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (existing().active == true || isAdmin() || isSubAdminWith('canManageAnnouncements'));
+      allow list: if isSignedIn() && (resource.data.active == true || isBootstrappedAdmin() || isSubAdminWith('canManageAnnouncements'));
+
+      allow create: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidAdminNotification(incoming()) &&
+                       (isAdmin() || isSubAdminWith('canManageAnnouncements')) &&
+                       incoming().authorUid == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'title', 'body', 'priority', 'active', 'authorUid', 'sentAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'title', 'body', 'priority', 'targetType', 'targetValue', 'scheduledForMillis',
+                         'iconBase64', 'active', 'authorUid', 'authorName', 'sentAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidAdminNotification(incoming()) &&
+                       (isAdmin() || isSubAdminWith('canManageAnnouncements')) &&
+                       incoming().authorUid == existing().authorUid &&
+                       (!('sentAt' in existing()) || incoming().sentAt == existing().sentAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'title', 'body', 'priority', 'targetType', 'targetValue', 'scheduledForMillis',
+                         'iconBase64', 'active', 'authorName', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(notificationId) && (isAdmin() || isSubAdminWith('canManageAnnouncements'));
+    }
+
+    // 4. Per-user private subcollections
+    match /users/{userId}/notification_states/{notificationId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(notificationId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidNotificationState(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().notificationId == notificationId &&
+                       incoming().keys().hasAll(['notificationId', 'read', 'readAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['notificationId', 'read', 'readAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidNotificationState(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().notificationId == existing().notificationId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['read', 'readAt', 'updatedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(notificationId);
+    }
+
+    match /users/{userId}/poll_votes/{pollId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(pollId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create, update: if isSignedIn() &&
+                               request.auth.uid == userId &&
+                               isValidId(pollId) &&
+                               isValidUserPollVoteReceipt(incoming()) &&
+                               incoming().pollId == pollId &&
+                               incoming().keys().hasAll(['pollId', 'optionIndex', 'votedAt']) &&
+                               incoming().keys().hasOnly(['pollId', 'optionIndex', 'votedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(pollId);
+    }
+
+    match /users/{userId}/claimed_gifts/{giftId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(giftId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(giftId) &&
+                       incoming().giftId == giftId &&
+                       incoming().amount is int && incoming().amount >= 1 && incoming().amount <= 10000 &&
+                       incoming().claimedAt is timestamp && incoming().claimedAt <= request.time &&
+                       incoming().keys().hasAll(['giftId', 'amount', 'claimedAt']) &&
+                       incoming().keys().hasOnly(['giftId', 'amount', 'claimedAt']);
+
+      allow update, delete: if false;
+    }
+
+    match /users/{userId}/time_sync/{probeId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && probeId == 'probe';
+      allow list: if false;
+      allow create, update: if isSignedIn() &&
+                               request.auth.uid == userId &&
+                               probeId == 'probe' &&
+                               incoming().ownerUid == userId &&
+                               incoming().ts is timestamp && incoming().ts <= request.time &&
+                               incoming().keys().hasAll(['ownerUid', 'ts']) &&
+                               incoming().keys().hasOnly(['ownerUid', 'ts']);
+      allow delete: if false;
+    }
+
+    // 5. Polls & Votes
+    match /polls/{pollId} {
+      allow get: if isSignedIn() && isValidId(pollId) && (existing().active == true || isAdmin());
+      allow list: if isSignedIn() && (resource.data.active == true || isBootstrappedAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(pollId) &&
+                       isAdmin() &&
+                       isValidCloudPoll(incoming()) &&
+                       incoming().authorUid == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'question', 'options', 'targetType', 'targetValue', 'active', 'authorUid', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'question', 'options', 'targetType', 'targetValue', 'active', 'authorUid', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(pollId) &&
+                       isAdmin() &&
+                       isValidCloudPoll(incoming()) &&
+                       incoming().authorUid == existing().authorUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'question', 'options', 'targetType', 'targetValue', 'active', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(pollId) && isAdmin();
+    }
+
+    match /polls/{pollId}/votes/{voterId} {
+      allow get: if isSignedIn() && isValidId(pollId) && isValidId(voterId) &&
+                    (request.auth.uid == voterId || isAdmin());
+      allow list: if isBootstrappedAdmin() || (isSignedIn() && resource.data.voterUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(pollId) &&
+                       request.auth.uid == voterId &&
+                       isValidPollVote(incoming()) &&
+                       incoming().pollId == pollId &&
+                       incoming().voterUid == voterId &&
+                       incoming().keys().hasAll(['pollId', 'voterUid', 'optionIndex', 'votedAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['pollId', 'voterUid', 'optionIndex', 'votedAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+                       isValidId(pollId) &&
+                       request.auth.uid == voterId &&
+                       isValidPollVote(incoming()) &&
+                       incoming().pollId == existing().pollId &&
+                       incoming().voterUid == existing().voterUid &&
+                       incoming().votedAt == existing().votedAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['optionIndex', 'updatedAt']);
+
+      allow delete: if isAdmin();
+    }
+
+    // 6. Teacher Cloud Accounts + Encrypted Backups
+    match /teacher_accounts/{accountKey} {
+      allow get: if isSignedIn() && isValidId(accountKey);
+      allow list: if isBootstrappedAdmin() || isSubAdminWith('canManageUsers') || isSubAdminWith('canViewAnalytics') ||
+                     (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(accountKey) &&
+                       isValidTeacherAccount(incoming()) &&
+                       incoming().accountKey == accountKey &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().accessMode in ['OPEN', 'TRIAL'] &&
+                       incoming().keys().hasAll([
+                         'accountKey', 'usernameDisplay', 'ownerUid', 'passwordHash', 'passwordSalt',
+                         'teacherName', 'specialtyId', 'gradeId', 'referralCode', 'referredByCode',
+                         'points', 'referralCount', 'claimedReferralIds', 'accessMode', 'trialDays',
+                         'trialExpiresAtMillis', 'todayDateKey', 'todayUsageSeconds', 'totalUsageSeconds',
+                         'toolUsageCounts', 'ratingStars', 'ratingComment', 'lastActiveAt', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'accountKey', 'usernameDisplay', 'ownerUid', 'passwordHash', 'passwordSalt',
+                         'teacherName', 'specialtyId', 'gradeId', 'referralCode', 'referredByCode',
+                         'points', 'referralCount', 'claimedReferralIds', 'accessMode', 'trialDays',
+                         'trialExpiresAtMillis', 'todayDateKey', 'todayUsageSeconds', 'totalUsageSeconds',
+                         'toolUsageCounts', 'ratingStars', 'ratingComment', 'promotionTitle',
+                         'allowWeeklyNameChange', 'nameChangeCount', 'boundDeviceId',
+                         'isOnlineVisible', 'lastPingAtMillis',
+                         'lastActiveAt', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(accountKey) &&
+                       isValidTeacherAccount(incoming()) &&
+                       incoming().accountKey == existing().accountKey &&
+                       incoming().createdAt == existing().createdAt &&
+                       (isAdmin() || isSubAdminWith('canManageUsers') || (
+                         existing().ownerUid == request.auth.uid &&
+                         incoming().ownerUid == existing().ownerUid &&
+                         incoming().accessMode == existing().accessMode &&
+                         incoming().trialDays == existing().trialDays &&
+                         incoming().trialExpiresAtMillis == existing().trialExpiresAtMillis
+                       )) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'usernameDisplay', 'passwordHash', 'passwordSalt', 'teacherName',
+                         'specialtyId', 'gradeId', 'referralCode', 'referredByCode',
+                         'points', 'referralCount', 'claimedReferralIds', 'accessMode',
+                         'trialDays', 'trialExpiresAtMillis', 'todayDateKey', 'todayUsageSeconds',
+                         'totalUsageSeconds', 'toolUsageCounts', 'ratingStars', 'ratingComment',
+                         'promotionTitle', 'allowWeeklyNameChange', 'nameChangeCount', 'boundDeviceId',
+                         'isOnlineVisible', 'lastPingAtMillis',
+                         'lastActiveAt', 'updatedAt'
+                       ]);
+
+      allow delete: if isAdmin() || isSubAdminWith('canManageUsers') ||
+                       (isSignedIn() && existing().ownerUid == request.auth.uid);
+    }
+
+    match /teacher_accounts/{accountKey}/backups/{backupId} {
+      allow get: if isSignedIn() && isValidId(accountKey) && backupId == 'latest';
+      allow list: if false;
+
+      allow create, update: if isSignedIn() &&
+                               isValidId(accountKey) &&
+                               backupId == 'latest' &&
+                               isValidTeacherBackup(incoming()) &&
+                               (incoming().ownerUid == request.auth.uid || isAdmin()) &&
+                               incoming().keys().hasAll([
+                                 'encryptedBlob', 'checksumSha256', 'ownerUid',
+                                 'studentCount', 'appVersionCode', 'updatedAt'
+                               ]) &&
+                               incoming().keys().hasOnly([
+                                 'encryptedBlob', 'checksumSha256', 'ownerUid',
+                                 'studentCount', 'appVersionCode', 'updatedAt'
+                               ]);
+
+      allow delete: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 7. Referral Codes & Claims
+    match /referral_codes/{code} {
+      allow get: if isSignedIn() && isValidUpperCode(code);
+      allow list: if isBootstrappedAdmin() || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+
+      allow create, update: if isSignedIn() &&
+                               isValidUpperCode(code) &&
+                               isValidReferralCodeDoc(incoming()) &&
+                               incoming().code == code &&
+                               incoming().ownerUid == request.auth.uid &&
+                               incoming().keys().hasAll([
+                                 'code', 'ownerUid', 'accountKey', 'teacherName', 'createdAt', 'updatedAt'
+                               ]) &&
+                               incoming().keys().hasOnly([
+                                 'code', 'ownerUid', 'accountKey', 'teacherName', 'createdAt', 'updatedAt'
+                               ]);
+
+      allow delete: if isAdmin() || (isSignedIn() && existing().ownerUid == request.auth.uid);
+    }
+
+    match /referral_claims/{claimId} {
+      allow get: if isSignedIn() && isValidId(claimId) &&
+                    (existing().claimerUid == request.auth.uid ||
+                     existing().referrerUid == request.auth.uid ||
+                     isAdmin());
+      allow list: if isBootstrappedAdmin() || (isSignedIn() && resource.data.referrerUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(claimId) &&
+                       isValidReferralClaim(incoming()) &&
+                       incoming().claimerUid == request.auth.uid &&
+                       incoming().referrerUid != request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'claimerUid', 'claimerAccountKey', 'referrerCode',
+                         'referrerUid', 'pointsAwarded', 'claimedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'claimerUid', 'claimerAccountKey', 'referrerCode',
+                         'referrerUid', 'pointsAwarded', 'claimedAt'
+                       ]);
+
+      allow update, delete: if isAdmin();
+    }
+
+    // 8. Admin Group Gifts
+    match /admin_gifts/{giftId} {
+      allow get: if isSignedIn() && isValidId(giftId) && (existing().active == true || isAdmin());
+      allow list: if isSignedIn() && (resource.data.active == true || isBootstrappedAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(giftId) &&
+                       isAdmin() &&
+                       isValidAdminGift(incoming()) &&
+                       incoming().authorUid == request.auth.uid &&
+                       incoming().keys().hasAll(['amount', 'message', 'targetType', 'active', 'authorUid', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['amount', 'message', 'targetType', 'active', 'authorUid', 'createdAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+                       isValidId(giftId) &&
+                       isAdmin() &&
+                       isValidAdminGift(incoming()) &&
+                       incoming().authorUid == existing().authorUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'message', 'active', 'updatedAt']);
+
+      allow delete: if isAdmin();
+    }
+
+    // 9. Developer Feedback & Complaints Box
+    match /developer_feedback/{feedbackId} {
+      allow get: if isSignedIn() && isValidId(feedbackId) &&
+                    (existing().senderUid == request.auth.uid || isAdmin());
+      allow list: if isBootstrappedAdmin() || (isSignedIn() && resource.data.senderUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       isValidDeveloperFeedback(incoming()) &&
+                       incoming().senderUid == request.auth.uid &&
+                       incoming().status == 'OPEN' &&
+                       incoming().keys().hasAll([
+                         'senderUid', 'senderName', 'accountKey', 'category', 'message',
+                         'wordCount', 'lockedThreeDays', 'lockedUntilMillis', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'senderUid', 'senderName', 'accountKey', 'category', 'message',
+                         'wordCount', 'lockedThreeDays', 'lockedUntilMillis', 'status', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       isAdmin() &&
+                       isValidDeveloperFeedback(incoming()) &&
+                       incoming().senderUid == existing().senderUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isAdmin();
+    }
+
+    // 10. Parent Read-Only Cloud Reports
+    match /parent_reports/{reportCode} {
+      allow get: if isSignedIn() &&
+                    isValidUpperCode(reportCode) &&
+                    (existing().deletedByAdmin == false || isAdmin() || existing().teacherUid == request.auth.uid);
+      allow list: if isBootstrappedAdmin() || (isSignedIn() && resource.data.teacherUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidUpperCode(reportCode) &&
+                       isValidParentReport(incoming()) &&
+                       incoming().reportCode == reportCode &&
+                       incoming().teacherUid == request.auth.uid &&
+                       incoming().deletedByAdmin == false &&
+                       incoming().keys().hasAll([
+                         'reportCode', 'teacherUid', 'teacherName', 'subjectName', 'studentName',
+                         'gradeTitle', 'sectionId', 'expiresAtMillis', 'deletedByAdmin',
+                         'visibilityJson', 'reportDataJson', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'reportCode', 'teacherUid', 'teacherName', 'subjectName', 'studentName',
+                         'gradeTitle', 'sectionId', 'expiresAtMillis', 'deletedByAdmin',
+                         'visibilityJson', 'reportDataJson', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidUpperCode(reportCode) &&
+                       isValidParentReport(incoming()) &&
+                       (isAdmin() || (existing().teacherUid == request.auth.uid && incoming().teacherUid == existing().teacherUid)) &&
+                       incoming().reportCode == existing().reportCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'deletedByAdmin', 'expiresAtMillis', 'visibilityJson', 'reportDataJson', 'updatedAt'
+                       ]);
+
+      allow delete: if isAdmin() || (isSignedIn() && existing().teacherUid == request.auth.uid);
+    }
+
+    // 11. Delegated Sub-Admins with granular permissions
+    match /sub_admins/{subAdminUid} {
+      allow get: if isSignedIn() && isValidId(subAdminUid) && (request.auth.uid == subAdminUid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create, update: if isAdmin() &&
+                               isValidId(subAdminUid) &&
+                               incoming().email is string && incoming().email.size() <= 200 &&
+                               incoming().name is string && incoming().name.size() <= 120 &&
+                               incoming().canManageUsers is bool &&
+                               incoming().canManageAnnouncements is bool &&
+                               incoming().canManageCodes is bool &&
+                               incoming().canViewAnalytics is bool &&
+                               (!('canManageRemoteControl' in incoming()) || incoming().canManageRemoteControl is bool) &&
+                               (!('canManageComparisons' in incoming()) || incoming().canManageComparisons is bool) &&
+                               incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                               incoming().keys().hasAll([
+                                 'email', 'name', 'canManageUsers', 'canManageAnnouncements',
+                                 'canManageCodes', 'canViewAnalytics', 'createdAt'
+                               ]) &&
+                               incoming().keys().hasOnly([
+                                 'email', 'name', 'canManageUsers', 'canManageAnnouncements',
+                                 'canManageCodes', 'canViewAnalytics', 'canManageRemoteControl',
+                                 'canManageComparisons', 'createdAt'
+                               ]);
+
+      allow delete: if isAdmin() && isValidId(subAdminUid);
+    }
+
+    // 12. Admin-generated Activation Codes & 1-Device Lock
+    match /activation_codes/{code} {
+      allow get: if isSignedIn() && isValidUpperCode(code);
+      allow list: if isAdmin() || isSubAdminWith('canManageCodes') ||
+                     (isSignedIn() && resource.data.usedByUid == request.auth.uid);
+
+      allow create: if (isAdmin() || isSubAdminWith('canManageCodes')) &&
+                       isValidUpperCode(code) &&
+                       incoming().assignedUsername is string && incoming().assignedUsername.size() <= 60 &&
+                       incoming().assignedPasswordHash is string && incoming().assignedPasswordHash.size() <= 160 &&
+                       incoming().isUsed is bool &&
+                       incoming().usedByUid is string && incoming().usedByUid.size() <= 128 &&
+                       incoming().boundDeviceId is string && incoming().boundDeviceId.size() <= 128 &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().keys().hasAll([
+                         'assignedUsername', 'assignedPasswordHash', 'isUsed', 'usedByUid', 'boundDeviceId', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'assignedUsername', 'assignedPasswordHash', 'assignedPasswordSalt', 'notes',
+                         'isUsed', 'usedByUid', 'boundDeviceId', 'createdAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidUpperCode(code) &&
+                       ((isAdmin() || isSubAdminWith('canManageCodes')) || (
+                         (!existing().isUsed || existing().usedByUid == request.auth.uid) &&
+                         incoming().assignedUsername == existing().assignedUsername &&
+                         incoming().assignedPasswordHash == existing().assignedPasswordHash &&
+                         incoming().usedByUid in ['', request.auth.uid]
+                       )) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'isUsed', 'usedByUid', 'boundDeviceId', 'notes'
+                       ]);
+
+      allow delete: if isAdmin() || isSubAdminWith('canManageCodes');
+    }
+
+    // 13. Teacher-to-Teacher Daily Chat (Max 50/day, 24h-48h Auto-Expiry)
+    match /users/{userId}/chat_quota/{dateKey} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(dateKey);
+      allow list: if false;
+      allow create, update: if isSignedIn() &&
+                               request.auth.uid == userId &&
+                               isValidId(dateKey) &&
+                               incoming().count is int && incoming().count >= 1 && incoming().count <= 50 &&
+                               incoming().dateKey == dateKey &&
+                               incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                               incoming().keys().hasAll(['dateKey', 'count', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['dateKey', 'count', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /teacher_chat_messages/{msgId} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(msgId) &&
+                       incoming().senderUid == request.auth.uid &&
+                       incoming().senderName is string && incoming().senderName.size() >= 1 && incoming().senderName.size() <= 120 &&
+                       incoming().specialtyId is string && incoming().specialtyId.size() <= 40 &&
+                       incoming().gradeId is string && incoming().gradeId.size() <= 40 &&
+                       incoming().messageText is string && incoming().messageText.size() <= 1000 &&
+                       (!('threadId' in incoming()) || (incoming().threadId is string && incoming().threadId.size() >= 1 && incoming().threadId.size() <= 140)) &&
+                       (!('senderUsername' in incoming()) || (incoming().senderUsername is string && incoming().senderUsername.size() <= 60)) &&
+                       (!('recipientAccountKey' in incoming()) || (incoming().recipientAccountKey is string && incoming().recipientAccountKey.size() <= 128)) &&
+                       (!('recipientUid' in incoming()) || (incoming().recipientUid is string && incoming().recipientUid.size() <= 128)) &&
+                       (!('recipientName' in incoming()) || (incoming().recipientName is string && incoming().recipientName.size() <= 120)) &&
+                       (!('imageBase64' in incoming()) || (incoming().imageBase64 is string && incoming().imageBase64.size() <= 185000)) &&
+                       (!('imageExpiresAtMillis' in incoming()) || (incoming().imageExpiresAtMillis is int && incoming().imageExpiresAtMillis >= 0)) &&
+                       (!('editedAtMillis' in incoming()) || (incoming().editedAtMillis is int && incoming().editedAtMillis >= 0)) &&
+                       (!('deletedForAll' in incoming()) || incoming().deletedForAll is bool) &&
+                       (!('deletedForUids' in incoming()) || (incoming().deletedForUids is list && incoming().deletedForUids.size() <= 200)) &&
+                       (!('deliveredToUids' in incoming()) || (incoming().deliveredToUids is list && incoming().deliveredToUids.size() <= 200)) &&
+                       (!('readByUids' in incoming()) || (incoming().readByUids is list && incoming().readByUids.size() <= 200)) &&
+                       (incoming().messageText.size() >= 1 || ('imageBase64' in incoming() && incoming().imageBase64.size() >= 1)) &&
+                       incoming().expiresAtMillis is int && incoming().expiresAtMillis > 0 &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().keys().hasAll([
+                         'senderUid', 'senderName', 'specialtyId', 'gradeId', 'messageText', 'expiresAtMillis', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'threadId', 'senderUid', 'senderName', 'senderUsername',
+                         'recipientAccountKey', 'recipientUid', 'recipientName',
+                         'specialtyId', 'gradeId', 'messageText',
+                         'imageBase64', 'imageExpiresAtMillis', 'editedAtMillis',
+                         'deletedForAll', 'deletedForUids', 'deliveredToUids', 'readByUids',
+                         'expiresAtMillis', 'createdAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(msgId) &&
+                       incoming().senderUid == existing().senderUid &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'messageText', 'imageBase64', 'editedAtMillis',
+                         'deletedForAll', 'deletedForUids', 'deliveredToUids', 'readByUids'
+                       ]) &&
+                       (existing().senderUid == request.auth.uid ||
+                        incoming().diff(existing()).affectedKeys().hasOnly(['deletedForUids', 'deliveredToUids', 'readByUids']));
+
+      allow delete: if isSignedIn() &&
+                       (isAdmin() ||
+                        existing().senderUid == request.auth.uid ||
+                        ('recipientUid' in existing() && existing().recipientUid == request.auth.uid) ||
+                        existing().expiresAtMillis > 0);
+    }
+
+    // 14. Teacher Display Name / Username Change Requests
+    match /name_change_requests/{requestId} {
+      allow get, list: if isSignedIn() && (
+                         isAdmin() ||
+                         isSubAdminWith('canManageUsers') ||
+                         resource.data.requesterUid == request.auth.uid
+                       );
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       incoming().requesterUid == request.auth.uid &&
+                       incoming().accountKey is string && incoming().accountKey.size() >= 1 && incoming().accountKey.size() <= 128 &&
+                       incoming().currentName is string && incoming().currentName.size() <= 120 &&
+                       incoming().requestedName is string && incoming().requestedName.size() >= 2 && incoming().requestedName.size() <= 120 &&
+                       incoming().status == 'PENDING' &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().keys().hasAll([
+                         'requesterUid', 'accountKey', 'currentName', 'requestedName', 'status', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'requesterUid', 'accountKey', 'currentName', 'requestedName', 'status', 'createdAt'
+                       ]);
+
+      allow update: if (isAdmin() || isSubAdminWith('canManageUsers')) &&
+                       incoming().status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+
+      allow delete: if isAdmin() || isSubAdminWith('canManageUsers');
+    }
+
+    // 15. Cross-Subject Grade Comparison Requests & Snapshots
+    match /grade_comparisons/{code} {
+      allow get: if isSignedIn() && isValidUpperCode(code);
+      allow list: if isSignedIn() && (
+                     isAdmin() ||
+                     isSubAdminWith('canManageComparisons') ||
+                     resource.data.creatorUid == request.auth.uid ||
+                     resource.data.partnerUid == request.auth.uid
+                   );
+
+      allow create: if isSignedIn() &&
+                       isValidUpperCode(code) &&
+                       incoming().creatorUid == request.auth.uid &&
+                       incoming().status == 'OPEN' &&
+                       incoming().creatorStatsJson is string && incoming().creatorStatsJson.size() <= 20000 &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().keys().hasAll([
+                         'creatorUid', 'creatorName', 'creatorSubject', 'creatorGradeTitle',
+                         'creatorSectionScope', 'creatorStatsJson', 'partnerUid', 'partnerName',
+                         'partnerSubject', 'partnerGradeTitle', 'partnerSectionScope', 'partnerStatsJson',
+                         'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'creatorUid', 'creatorName', 'creatorSubject', 'creatorGradeTitle',
+                         'creatorSectionScope', 'creatorStatsJson', 'partnerUid', 'partnerName',
+                         'partnerSubject', 'partnerGradeTitle', 'partnerSectionScope', 'partnerStatsJson',
+                         'status', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidUpperCode(code) &&
+                       ((isAdmin() || isSubAdminWith('canManageComparisons')) &&
+                        incoming().status in ['OPEN', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] ||
+                        (existing().status == 'OPEN' &&
+                         existing().creatorUid != request.auth.uid &&
+                         incoming().partnerUid == request.auth.uid &&
+                         incoming().status == 'PENDING_APPROVAL' &&
+                         incoming().partnerStatsJson is string && incoming().partnerStatsJson.size() <= 20000)) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'partnerUid', 'partnerName', 'partnerSubject', 'partnerGradeTitle',
+                         'partnerSectionScope', 'partnerStatsJson', 'status', 'updatedAt'
+                       ]);
+
+      allow delete: if isAdmin() || isSubAdminWith('canManageComparisons') ||
+                       (isSignedIn() && existing().creatorUid == request.auth.uid);
+    }
+
+    // 16. Shared Teacher PDF Study Guides Library (PDF-only, chunked up to 5 MB)
+    match /study_guides/{guideId} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(guideId) &&
+                       incoming().uploaderUid == request.auth.uid &&
+                       incoming().title is string && incoming().title.size() >= 2 && incoming().title.size() <= 160 &&
+                       incoming().subjectTitle is string && incoming().subjectTitle.size() >= 1 && incoming().subjectTitle.size() <= 80 &&
+                       incoming().gradeId is string && incoming().gradeId.size() <= 40 &&
+                       incoming().teacherName is string && incoming().teacherName.size() >= 1 && incoming().teacherName.size() <= 120 &&
+                       incoming().description is string && incoming().description.size() <= 600 &&
+                       incoming().fileName is string && incoming().fileName.size() >= 5 && incoming().fileName.size() <= 180 &&
+                       incoming().mimeType == 'application/pdf' &&
+                       incoming().fileSizeBytes is int && incoming().fileSizeBytes >= 5 && incoming().fileSizeBytes <= 6000000 &&
+                       incoming().chunkCount is int && incoming().chunkCount >= 1 && incoming().chunkCount <= 16 &&
+                       incoming().downloadCount is int && incoming().downloadCount == 0 &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().keys().hasAll([
+                         'title', 'subjectTitle', 'gradeId', 'uploaderUid', 'teacherName',
+                         'description', 'fileName', 'mimeType', 'fileSizeBytes', 'chunkCount',
+                         'downloadCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'title', 'subjectTitle', 'gradeId', 'uploaderUid', 'teacherName',
+                         'description', 'fileName', 'mimeType', 'fileSizeBytes', 'chunkCount',
+                         'downloadCount', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isSignedIn() &&
+                       isValidId(guideId) &&
+                       (
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['downloadCount', 'updatedAt']) &&
+                          incoming().downloadCount is int &&
+                          incoming().downloadCount >= existing().downloadCount &&
+                          incoming().downloadCount <= existing().downloadCount + 1 &&
+                          incoming().updatedAt is timestamp &&
+                          incoming().updatedAt <= request.time) ||
+                         ((existing().uploaderUid == request.auth.uid || isAdmin() || isSubAdminWith('canManageRemoteControl')) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subjectTitle', 'gradeId', 'description', 'updatedAt']) &&
+                          incoming().title is string && incoming().title.size() >= 2 && incoming().title.size() <= 160 &&
+                          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time)
+                       );
+
+      allow delete: if isSignedIn() &&
+                       (existing().uploaderUid == request.auth.uid || isAdmin() || isSubAdminWith('canManageRemoteControl'));
+
+      match /chunks/{chunkId} {
+        allow get, list: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         isValidId(guideId) &&
+                         isValidId(chunkId) &&
+                         incoming().uploaderUid == request.auth.uid &&
+                         incoming().chunkIndex is int && incoming().chunkIndex >= 0 && incoming().chunkIndex <= 15 &&
+                         incoming().dataBase64 is string && incoming().dataBase64.size() >= 1 && incoming().dataBase64.size() <= 800000 &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().keys().hasAll(['uploaderUid', 'chunkIndex', 'dataBase64', 'createdAt']) &&
+                         incoming().keys().hasOnly(['uploaderUid', 'chunkIndex', 'dataBase64', 'createdAt']);
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() &&
+                         (existing().uploaderUid == request.auth.uid || isAdmin() || isSubAdminWith('canManageRemoteControl'));
+      }
+    }
+  }
+}

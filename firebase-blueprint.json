@@ -1,0 +1,430 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authoritative record marking an authenticated Google user as an app administrator.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "isAdmin", "createdAt", "updatedAt"]
+    },
+    "AppReleaseConfig": {
+      "title": "AppReleaseConfig",
+      "description": "Remote release metadata controlling online app update checks and APK downloads.",
+      "type": "object",
+      "properties": {
+        "latest_version_code": { "type": "integer" },
+        "latest_version_name": { "type": "string" },
+        "release_notes": { "type": "string" },
+        "force_update": { "type": "boolean" },
+        "apk_url": { "type": "string" },
+        "release_image_url": { "type": "string" },
+        "release_image_base64": { "type": "string" },
+        "updated_by": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "latest_version_code",
+        "latest_version_name",
+        "release_notes",
+        "force_update",
+        "apk_url",
+        "updated_by",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RemoteControlConfig": {
+      "title": "RemoteControlConfig",
+      "description": "Admin remote controls: tool toggles, points-gated tools, temporary seasonal theme, and maintenance mode.",
+      "type": "object",
+      "properties": {
+        "maintenanceEnabled": { "type": "boolean" },
+        "maintenanceMessage": { "type": "string" },
+        "disabledTools": { "type": "array", "items": { "type": "string" } },
+        "pointsRequiredTools": { "type": "object" },
+        "seasonalTheme": {
+          "type": "string",
+          "enum": ["NONE", "RAMADAN", "EID", "TEACHER_DAY", "EXAMS", "AUTUMN", "DARK_GOLD"]
+        },
+        "defaultAccessMode": { "type": "string", "enum": ["OPEN", "TRIAL"] },
+        "defaultTrialDays": { "type": "integer" },
+        "internalUpdateRevision": { "type": "integer" },
+        "internalUpdateTitle": { "type": "string" },
+        "internalUpdateIncludeSchoolRoster": { "type": "boolean" },
+        "internalUpdateCustomRosterText": { "type": "string" },
+        "experimentalLayoutEnabled": { "type": "boolean" },
+        "experimentalLayoutMode": {
+          "type": "string",
+          "enum": ["CLASSIC", "MODERN_SPLIT", "COMPACT_CARDS", "FOCUS_STUDIO", "SPECIALIST_PRO"]
+        },
+        "updatedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "maintenanceEnabled",
+        "maintenanceMessage",
+        "disabledTools",
+        "pointsRequiredTools",
+        "seasonalTheme",
+        "defaultAccessMode",
+        "defaultTrialDays",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PromoBannerConfig": {
+      "title": "PromoBannerConfig",
+      "description": "In-app promotional ad banner with title, description, optional image URL, external link, and phone number.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "actionUrl": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "buttonLabel": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["enabled", "title", "description", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "AdminNotification": {
+      "title": "AdminNotification",
+      "description": "Targeted or broadcast announcement created by an administrator.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "priority": { "type": "string", "enum": ["NORMAL", "IMPORTANT", "URGENT"] },
+        "targetType": { "type": "string", "enum": ["ALL", "USER", "GRADE", "SUBJECT"] },
+        "targetValue": { "type": "string" },
+        "iconBase64": { "type": "string" },
+        "active": { "type": "boolean" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "body", "priority", "active", "authorUid", "sentAt", "updatedAt"]
+    },
+    "UserNotificationState": {
+      "title": "UserNotificationState",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "readAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notificationId", "read", "readAt", "updatedAt"]
+    },
+    "CloudPoll": {
+      "title": "CloudPoll",
+      "description": "Interactive survey/vote modal dispatched to users that closes immediately once voted.",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "targetType": { "type": "string", "enum": ["ALL", "USER", "GRADE", "SUBJECT"] },
+        "targetValue": { "type": "string" },
+        "active": { "type": "boolean" },
+        "authorUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["question", "options", "targetType", "targetValue", "active", "authorUid", "createdAt", "updatedAt"]
+    },
+    "PollVote": {
+      "title": "PollVote",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string" },
+        "voterUid": { "type": "string" },
+        "optionIndex": { "type": "integer" },
+        "votedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pollId", "voterUid", "optionIndex", "votedAt", "updatedAt"]
+    },
+    "UserPollVoteReceipt": {
+      "title": "UserPollVoteReceipt",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string" },
+        "optionIndex": { "type": "integer" },
+        "votedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pollId", "optionIndex", "votedAt"]
+    },
+    "TeacherAccount": {
+      "title": "TeacherAccount",
+      "description": "Teacher cloud identity, referral points, trial/open license, telemetry, and rating (no email/phone PII).",
+      "type": "object",
+      "properties": {
+        "accountKey": { "type": "string" },
+        "usernameDisplay": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "passwordSalt": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "specialtyId": { "type": "string" },
+        "gradeId": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referredByCode": { "type": "string" },
+        "points": { "type": "integer" },
+        "referralCount": { "type": "integer" },
+        "claimedReferralIds": { "type": "array", "items": { "type": "string" } },
+        "accessMode": { "type": "string", "enum": ["OPEN", "TRIAL", "SUSPENDED"] },
+        "trialDays": { "type": "integer" },
+        "trialExpiresAtMillis": { "type": "integer" },
+        "todayDateKey": { "type": "string" },
+        "todayUsageSeconds": { "type": "integer" },
+        "totalUsageSeconds": { "type": "integer" },
+        "toolUsageCounts": { "type": "object" },
+        "ratingStars": { "type": "integer" },
+        "ratingComment": { "type": "string" },
+        "isOnlineVisible": { "type": "boolean" },
+        "lastPingAtMillis": { "type": "integer" },
+        "lastActiveAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "accountKey", "usernameDisplay", "ownerUid", "passwordHash", "passwordSalt",
+        "teacherName", "specialtyId", "gradeId", "referralCode", "referredByCode",
+        "points", "referralCount", "claimedReferralIds", "accessMode", "trialDays",
+        "trialExpiresAtMillis", "todayDateKey", "todayUsageSeconds", "totalUsageSeconds",
+        "toolUsageCounts", "ratingStars", "ratingComment", "lastActiveAt", "createdAt", "updatedAt"
+      ]
+    },
+    "TeacherBackup": {
+      "title": "TeacherBackup",
+      "description": "AES-256-GCM encrypted & GZIP-compressed full AppState JSON for cross-device username+password restore.",
+      "type": "object",
+      "properties": {
+        "encryptedBlob": { "type": "string" },
+        "checksumSha256": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "studentCount": { "type": "integer" },
+        "appVersionCode": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["encryptedBlob", "checksumSha256", "ownerUid", "studentCount", "appVersionCode", "updatedAt"]
+    },
+    "ReferralCode": {
+      "title": "ReferralCode",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "accountKey": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "ownerUid", "accountKey", "teacherName", "createdAt", "updatedAt"]
+    },
+    "ReferralClaim": {
+      "title": "ReferralClaim",
+      "type": "object",
+      "properties": {
+        "claimerUid": { "type": "string" },
+        "claimerAccountKey": { "type": "string" },
+        "referrerCode": { "type": "string" },
+        "referrerUid": { "type": "string" },
+        "pointsAwarded": { "type": "integer" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["claimerUid", "claimerAccountKey", "referrerCode", "referrerUid", "pointsAwarded", "claimedAt"]
+    },
+    "AdminGift": {
+      "title": "AdminGift",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "integer" },
+        "message": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["ALL"] },
+        "active": { "type": "boolean" },
+        "authorUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["amount", "message", "targetType", "active", "authorUid", "createdAt", "updatedAt"]
+    },
+    "ClaimedGiftReceipt": {
+      "title": "ClaimedGiftReceipt",
+      "type": "object",
+      "properties": {
+        "giftId": { "type": "string" },
+        "amount": { "type": "integer" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["giftId", "amount", "claimedAt"]
+    },
+    "TimeSyncProbe": {
+      "title": "TimeSyncProbe",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "ts": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "ts"]
+    },
+    "DeveloperFeedback": {
+      "title": "DeveloperFeedback",
+      "description": "Suggestions & complaints box presented as 'مراسلة المطور'; messages >100 words stay locked open 3 days.",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "senderName": { "type": "string" },
+        "accountKey": { "type": "string" },
+        "category": { "type": "string", "enum": ["SUGGESTION", "COMPLAINT", "BUG", "OTHER"] },
+        "message": { "type": "string" },
+        "wordCount": { "type": "integer" },
+        "lockedThreeDays": { "type": "boolean" },
+        "lockedUntilMillis": { "type": "integer" },
+        "status": { "type": "string", "enum": ["OPEN", "REVIEWED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "senderUid", "senderName", "accountKey", "category", "message",
+        "wordCount", "lockedThreeDays", "lockedUntilMillis", "status", "createdAt", "updatedAt"
+      ]
+    },
+    "ParentReport": {
+      "title": "ParentReport",
+      "description": "Read-only 3-day expiring cloud link showing strictly selected student grade fields for parents.",
+      "type": "object",
+      "properties": {
+        "reportCode": { "type": "string" },
+        "teacherUid": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "subjectName": { "type": "string" },
+        "studentName": { "type": "string" },
+        "gradeTitle": { "type": "string" },
+        "sectionId": { "type": "string" },
+        "expiresAtMillis": { "type": "integer" },
+        "deletedByAdmin": { "type": "boolean" },
+        "visibilityJson": { "type": "string" },
+        "reportDataJson": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "reportCode", "teacherUid", "teacherName", "subjectName", "studentName",
+        "gradeTitle", "sectionId", "expiresAtMillis", "deletedByAdmin",
+        "visibilityJson", "reportDataJson", "createdAt", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administrator role documents keyed by Firebase Auth UID."
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppReleaseConfig" },
+      "description": "Remote config docs: latest_release, remote_control, promo_banner."
+    },
+    "/admin_notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AdminNotification" },
+      "description": "Admin-managed targeted and broadcast announcements."
+    },
+    "/users/{userId}/notification_states/{notificationId}": {
+      "schema": { "$ref": "#/entities/UserNotificationState" },
+      "description": "User-isolated notification read receipts."
+    },
+    "/users/{userId}/poll_votes/{pollId}": {
+      "schema": { "$ref": "#/entities/UserPollVoteReceipt" },
+      "description": "User-isolated poll vote receipts so poll popups close permanently after voting."
+    },
+    "/users/{userId}/claimed_gifts/{giftId}": {
+      "schema": { "$ref": "#/entities/ClaimedGiftReceipt" },
+      "description": "User-isolated gift claim receipts."
+    },
+    "/users/{userId}/time_sync/{probeId}": {
+      "schema": { "$ref": "#/entities/TimeSyncProbe" },
+      "description": "Server timestamp probe for tamper-proof trial and lock validation."
+    },
+    "/polls/{pollId}": {
+      "schema": { "$ref": "#/entities/CloudPoll" },
+      "description": "Admin-created live polls."
+    },
+    "/polls/{pollId}/votes/{voterId}": {
+      "schema": { "$ref": "#/entities/PollVote" },
+      "description": "Individual user vote per poll."
+    },
+    "/teacher_accounts/{accountKey}": {
+      "schema": { "$ref": "#/entities/TeacherAccount" },
+      "description": "Teacher cloud profiles, usage analytics, points, and licensing."
+    },
+    "/teacher_accounts/{accountKey}/backups/{backupId}": {
+      "schema": { "$ref": "#/entities/TeacherBackup" },
+      "description": "Encrypted full teacher backups."
+    },
+    "/referral_codes/{code}": {
+      "schema": { "$ref": "#/entities/ReferralCode" },
+      "description": "Shareable teacher referral code registry."
+    },
+    "/referral_claims/{claimId}": {
+      "schema": { "$ref": "#/entities/ReferralClaim" },
+      "description": "Verified friend referral claims."
+    },
+    "/admin_gifts/{giftId}": {
+      "schema": { "$ref": "#/entities/AdminGift" },
+      "description": "Group point gifts sent by Admin."
+    },
+    "/developer_feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/DeveloperFeedback" },
+      "description": "Suggestions & complaints sent to Developer."
+    },
+    "/parent_reports/{reportCode}": {
+      "schema": { "$ref": "#/entities/ParentReport" },
+      "description": "Expiring read-only student reports shared with parents."
+    },
+    "/sub_admins/{subAdminUid}": {
+      "schema": { "type": "object" },
+      "description": "Delegated sub-administrators with granular permission flags."
+    },
+    "/activation_codes/{code}": {
+      "schema": { "type": "object" },
+      "description": "Admin-generated activation codes with single-device lock binding."
+    },
+    "/teacher_chat_messages/{msgId}": {
+      "schema": { "type": "object" },
+      "description": "Teacher-to-teacher specialty chat messages auto-expiring after 24h or 48h."
+    },
+    "/users/{userId}/chat_quota/{dateKey}": {
+      "schema": { "type": "object" },
+      "description": "Daily chat message counter capped at 50 messages per teacher per day."
+    },
+    "/name_change_requests/{requestId}": {
+      "schema": { "type": "object" },
+      "description": "Teacher display/username change requests pending admin approval."
+    },
+    "/grade_comparisons/{code}": {
+      "schema": { "type": "object" },
+      "description": "Cross-subject section/grade performance comparisons joined via code and approved by Admin."
+    },
+    "/study_guides/{guideId}": {
+      "schema": { "type": "object" },
+      "description": "Shared teacher PDF study guides (strictly application/pdf) browsable and searchable by all teachers."
+    },
+    "/study_guides/{guideId}/chunks/{chunkId}": {
+      "schema": { "type": "object" },
+      "description": "Base64-encoded PDF chunks (max 5 MB total) for shared study guides."
+    }
+  }
+}
